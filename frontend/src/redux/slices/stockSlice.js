@@ -6,10 +6,17 @@ const initialState = {
     sectors: [],
     loading: false,
     error: null,
+    pagination: {
+        total: 0,
+        page: 1,
+        limit: 100,
+    },
     filters: {
         search: '',
         sector: '',
         exchange: '',
+        page: 1,
+        limit: 100,
     },
 };
 
@@ -25,7 +32,12 @@ const stockSlice = createSlice({
         // Fetch stocks success
         fetchStocksSuccess: (state, action) => {
             state.loading = false;
-            state.stocks = action.payload;
+            state.stocks = action.payload?.data || [];
+            state.pagination = {
+                total: action.payload?.total || 0,
+                page: action.payload?.page || 1,
+                limit: action.payload?.limit || 100,
+            };
             state.error = null;
         },
         // Fetch stocks failure
@@ -51,6 +63,8 @@ const stockSlice = createSlice({
                 search: '',
                 sector: '',
                 exchange: '',
+                page: 1,
+                limit: 100,
             };
         },
         // Update stock price (for real-time updates)

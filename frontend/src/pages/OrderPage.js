@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import api from '../services/api';
+import websocketService from '../services/websocketService';
 
 /**
  * Order Page
@@ -12,21 +13,40 @@ const OrderPage = () => {
     const location = useLocation();
     const navigate = useNavigate();
 
-    const { stock, currentPrice } = location.state || {};
+    const { stock, currentPrice: initialPrice } = location.state || {};
     const { user } = useSelector((state) => state.auth);
+
+    // Get live price from Redux store for this symbol
+    const reduxStock = useSelector((state) =>
+        state.stock.stocks.find(s => s.symbol === symbol) || state.stock.selectedStock
+    );
+
+    const livePrice = reduxStock?.currentPrice || initialPrice;
 
     const [quantity, setQuantity] = useState(1);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
     const isBuy = type === 'buy';
-    const totalAmount = quantity * (currentPrice || 0);
+    const totalAmount = quantity * (livePrice || 0);
 
     useEffect(() => {
-        if (!stock || !currentPrice) {
+        if (!stock || !livePrice) {
             setError('Missing stock information. Please go back and try again.');
         }
-    }, [stock, currentPrice]);
+
+        // Subscribe to live price updates for this symbol
+        if (symbol) {
+            websocketService.subscribe([symbol]);
+        }
+
+        return () => {
+            // Unsubscribe when leaving the page
+            if (symbol) {
+                websocketService.unsubscribe([symbol]);
+            }
+        };
+    }, [stock, livePrice, symbol]);
 
     const handleQuantityChange = (e) => {
         const value = parseInt(e.target.value) || 0;
@@ -58,7 +78,7 @@ const OrderPage = () => {
             const { data } = await api.post(endpoint, {
                 symbol: symbol,
                 quantity: quantity,
-                price: currentPrice
+                price: livePrice
             });
 
             if (data.success) {
@@ -81,7 +101,7 @@ const OrderPage = () => {
         }
     };
 
-    if (!stock || !currentPrice) {
+    if (!stock || !livePrice) {
         return (
             <div className="min-h-screen bg-neutral-50 dark:bg-neutral-900 flex items-center justify-center p-4">
                 <div className="card max-w-md w-full bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800">
@@ -131,7 +151,7 @@ const OrderPage = () => {
                                     Current Price
                                 </span>
                                 <span className="text-xl font-bold text-neutral-900 dark:text-white">
-                                    ₹{currentPrice.toFixed(2)}
+                                    ₹{livePrice.toFixed(2)}
                                 </span>
                             </div>
                             <div className="flex justify-between items-center">
@@ -184,7 +204,7 @@ const OrderPage = () => {
                                         Price per share
                                     </span>
                                     <span className="font-medium text-neutral-900 dark:text-white">
-                                        ₹{currentPrice.toFixed(2)}
+                                        ₹{livePrice.toFixed(2)}
                                     </span>
                                 </div>
 

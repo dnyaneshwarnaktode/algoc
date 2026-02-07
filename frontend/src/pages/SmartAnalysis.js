@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { fetchStockBySymbol } from '../services/stockService';
 import TradingChart from '../components/TradingChart';
 import api from '../services/api';
+import websocketService from '../services/websocketService';
 
 const SmartAnalysis = () => {
     const { symbol } = useParams();
@@ -17,18 +18,25 @@ const SmartAnalysis = () => {
 
     const { user } = useSelector((state) => state.auth);
 
-    // Fetch stock details and user's holding
+    // Get live price from Redux store
+    const reduxStock = useSelector((state) =>
+        state.stock.stocks.find(s => s.symbol === symbol) || state.stock.selectedStock
+    );
+
+    const currentPrice = reduxStock?.currentPrice || stock?.basePrice || 0;
+    const change = reduxStock?.change || 0;
+    const changePercent = reduxStock?.changePercent || 0;
+    const isPositive = change >= 0;
+
     useEffect(() => {
         const loadData = async () => {
             setLoading(true);
-            // Fetch Stock
             const result = await dispatch(fetchStockBySymbol(symbol));
 
             if (result.success) {
                 setStock(result.data);
                 setError(null);
 
-                // Fetch Holding
                 try {
                     const { data } = await api.get(`/orders/holding/${symbol}`);
                     if (data.success) {
@@ -37,7 +45,6 @@ const SmartAnalysis = () => {
                 } catch (err) {
                     console.error('Failed to fetch holding:', err);
                 }
-
             } else {
                 setError(result.message || 'Failed to load stock');
             }
@@ -45,16 +52,18 @@ const SmartAnalysis = () => {
         };
 
         loadData();
+
+        // Subscribe to live updates
+        if (symbol) {
+            websocketService.subscribe(symbol);
+        }
+
+        return () => {
+            if (symbol) {
+                websocketService.unsubscribe(symbol);
+            }
+        };
     }, [symbol, dispatch]);
-
-    // Use base price (no fluctuations)
-    const currentPrice = stock?.basePrice || 0;
-
-    // Small random change for display only
-    const randomChange = (Math.random() - 0.5) * 0.02; // ±1%
-    const change = currentPrice * randomChange;
-    const changePercent = randomChange * 100;
-    const isPositive = change >= 0;
 
     const handleBuy = () => {
         navigate(`/order/buy/${symbol}`, { state: { stock, currentPrice } });

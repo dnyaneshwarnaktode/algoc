@@ -1,6 +1,4 @@
-const Stock = require('../models/Stock');
-const priceGenerator = require('./priceGenerator');
-const marketDataController = require('../controllers/marketDataController');
+const marketDataService = require('./marketDataService');
 
 /**
  * WebSocket Service
@@ -41,6 +39,12 @@ class WebSocketService {
         this.io.on('connection', (socket) => {
             console.log(`🔌 Client connected: ${socket.id}`);
 
+            // Send market data mode to client
+            socket.emit('market_mode', {
+                mode: marketDataService.getMode(),
+                status: marketDataService.getStatus(),
+            });
+
             // Handle stock subscription
             socket.on('subscribe', async (data) => {
                 try {
@@ -48,10 +52,13 @@ class WebSocketService {
 
                     if (Array.isArray(symbols)) {
                         // Subscribe to multiple stocks
-                        symbols.forEach((symbol) => {
+                        for (const symbol of symbols) {
                             socket.join(`stock:${symbol}`);
                             this.activeStocks.add(symbol);
-                        });
+
+                            // Ensure market data service knows about this stock (async)
+                            await marketDataService.ensureStockTracked(symbol);
+                        }
 
                         // Send current prices immediately
                         const prices = await this.getCurrentPrices(symbols);
@@ -94,32 +101,10 @@ class WebSocketService {
      */
     async startPriceUpdates() {
         try {
-            // Initialize market data controller
-            await marketDataController.initializeMarketData();
+            console.log(`📈 Starting price updates...`);
 
-            // Initialize all stocks with base prices
-            const stocks = await Stock.find({ isActive: true });
-
-            stocks.forEach((stock) => {
-                priceGenerator.initializeStock(stock.symbol, stock.basePrice);
-                this.activeStocks.add(stock.symbol);
-            });
-
-            console.log(`📈 Initialized ${stocks.length} stocks for price updates`);
-
-            // Register callback for Angel One price updates
-            marketDataController.onPriceUpdate((priceData) => {
-                // Emit Angel One price to subscribed clients
-                this.io.to(`stock:${priceData.symbol}`).emit('price_update', priceData);
-                this.io.emit('prices', [priceData]);
-            });
-
-            // Start Angel One streaming (if enabled)
-            const symbols = Array.from(this.activeStocks);
-            await marketDataController.startMarketData(symbols);
-            await marketDataController.subscribeToSymbols(symbols);
-
-            // Start simulated price updates as fallback
+            // Subscribe to market data updates
+            // In simulated mode, broadcast updates periodically
             this.priceUpdateInterval = setInterval(() => {
                 this.broadcastPriceUpdates();
             }, this.updateFrequency);
@@ -137,8 +122,23 @@ class WebSocketService {
         const updates = [];
 
         this.activeStocks.forEach((symbol) => {
-            const priceUpdate = priceGenerator.generateNextPrice(symbol);
-            if (priceUpdate) {
+            const marketData = marketDataService.getMarketData(symbol);
+            if (marketData) {
+                const priceUpdate = {
+                    symbol: marketData.symbol,
+                    price: marketData.ltp,
+                    ltp: marketData.ltp,
+                    open: marketData.open,
+                    high: marketData.high,
+                    low: marketData.low,
+                    close: marketData.close,
+                    volume: marketData.volume,
+                    timestamp: marketData.timestamp,
+                    // Calculate change
+                    change: marketData.ltp - marketData.close,
+                    changePercent: ((marketData.ltp - marketData.close) / marketData.close) * 100,
+                };
+
                 updates.push(priceUpdate);
 
                 // Emit to all clients subscribed to this stock
@@ -159,16 +159,21 @@ class WebSocketService {
         const prices = [];
 
         for (const symbol of symbols) {
-            const price = priceGenerator.getCurrentPrice(symbol);
-            if (price) {
-                prices.push(price);
-            } else {
-                // Initialize if not found
-                const stock = await Stock.findOne({ symbol, isActive: true });
-                if (stock) {
-                    priceGenerator.initializeStock(symbol, stock.basePrice);
-                    prices.push(priceGenerator.getCurrentPrice(symbol));
-                }
+            const marketData = marketDataService.getMarketData(symbol);
+            if (marketData) {
+                prices.push({
+                    symbol: marketData.symbol,
+                    price: marketData.ltp,
+                    ltp: marketData.ltp,
+                    open: marketData.open,
+                    high: marketData.high,
+                    low: marketData.low,
+                    close: marketData.close,
+                    volume: marketData.volume,
+                    timestamp: marketData.timestamp,
+                    change: marketData.ltp - marketData.close,
+                    changePercent: ((marketData.ltp - marketData.close) / marketData.close) * 100,
+                });
             }
         }
 
@@ -195,3 +200,4 @@ class WebSocketService {
 }
 
 module.exports = new WebSocketService();
+

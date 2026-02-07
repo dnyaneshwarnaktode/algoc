@@ -20,23 +20,36 @@ app.use(cors({
 app.use(express.json()); // Parse JSON request bodies
 app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
 
+// Request Logger
+app.use((req, res, next) => {
+    const start = Date.now();
+    res.on('finish', () => {
+        const duration = Date.now() - start;
+        console.log(`${new Date().toISOString()} - ${req.method} ${req.url} ${res.statusCode} (${duration}ms)`);
+    });
+    next();
+});
+
+// Handle favicon
+app.get('/favicon.ico', (req, res) => res.status(204).end());
+
 // Routes
 const authRoutes = require('./routes/authRoutes');
 const stockRoutes = require('./routes/stockRoutes');
 const orderRoutes = require('./routes/orderRoutes');
-const angeloneRoutes = require('./routes/angeloneRoutes');
 const webhookRoutes = require('./routes/webhookRoutes');
 const strategyRoutes = require('./routes/strategyRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const fyersRoutes = require('./routes/fyersRoutes');
 
 // Mount routes
 app.use('/api/auth', authRoutes);
 app.use('/api/stocks', stockRoutes);
 app.use('/api/orders', orderRoutes);
-app.use('/api/angelone', angeloneRoutes);
 app.use('/api/webhook', webhookRoutes);
 app.use('/api/strategies', strategyRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/fyers', fyersRoutes);
 
 // Basic health check route
 app.get('/api/health', (req, res) => {

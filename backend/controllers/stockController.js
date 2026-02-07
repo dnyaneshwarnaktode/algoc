@@ -1,4 +1,6 @@
 const Stock = require('../models/Stock');
+const fyersSymbolUtility = require('../utils/fyersSymbolUtility');
+const marketDataService = require('../services/marketDataService');
 
 /**
  * @desc    Get all stocks with optional filters
@@ -7,7 +9,8 @@ const Stock = require('../models/Stock');
  */
 const getStocks = async (req, res) => {
     try {
-        const { search, sector, exchange, limit = 50 } = req.query;
+        const { search, sector, exchange, limit = 200, page = 1 } = req.query;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
 
         // Build query
         let query = { isActive: true };
@@ -30,12 +33,17 @@ const getStocks = async (req, res) => {
             query.exchange = exchange;
         }
 
+        const totalStocks = await Stock.countDocuments(query);
         const stocks = await Stock.find(query)
-            .limit(parseInt(limit))
-            .sort({ symbol: 1 });
+            .sort({ symbol: 1 })
+            .skip(skip)
+            .limit(parseInt(limit));
 
         res.status(200).json({
             success: true,
+            total: totalStocks,
+            page: parseInt(page),
+            limit: parseInt(limit),
             count: stocks.length,
             data: stocks,
         });
@@ -102,6 +110,29 @@ const getSectors = async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error fetching sectors',
+            error: error.message,
+        });
+    }
+};
+
+/**
+ * @desc    Get market data status
+ * @route   GET /api/stocks/market-status
+ * @access  Private
+ */
+const getMarketDataStatus = async (req, res) => {
+    try {
+        const status = marketDataService.getStatus();
+
+        res.status(200).json({
+            success: true,
+            data: status,
+        });
+    } catch (error) {
+        console.error('Get market status error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching market data status',
             error: error.message,
         });
     }
@@ -217,11 +248,36 @@ const deleteStock = async (req, res) => {
     }
 };
 
+/**
+ * @desc    Sync all stocks from Fyers API
+ * @route   POST /api/stocks/sync-fyers
+ * @access  Private/Admin
+ */
+const syncFyersStocks = async (req, res) => {
+    try {
+        const result = await fyersSymbolUtility.syncAllStocks();
+        res.status(200).json({
+            success: true,
+            message: `Synced ${result.total} stocks from Fyers`,
+            data: result
+        });
+    } catch (error) {
+        console.error('Sync fyers stocks error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error syncing stocks from Fyers',
+            error: error.message,
+        });
+    }
+};
+
 module.exports = {
     getStocks,
     getStockBySymbol,
     getSectors,
+    getMarketDataStatus,
     addStock,
     updateStock,
     deleteStock,
+    syncFyersStocks,
 };

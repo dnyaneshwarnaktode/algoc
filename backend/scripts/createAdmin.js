@@ -66,7 +66,6 @@ const createAdmin = async () => {
         console.log('   Password: admin123');
         console.log('\n⚠️  IMPORTANT: Change the password after first login!');
         console.log('\n🎯 Admin Access:');
-        console.log('   - Angel One Settings (/admin/settings)');
         console.log('   - Market Data Control');
         console.log('   - Connection Management');
         console.log('   - Symbol Mappings');

@@ -3,10 +3,11 @@ import { useDispatch, useSelector } from 'react-redux';
 import { fetchStocks, fetchSectors } from '../services/stockService';
 import { setFilters, clearFilters } from '../redux/slices/stockSlice';
 import StockCard from '../components/StockCard';
+import websocketService from '../services/websocketService';
 
 const StocksWatchlist = () => {
     const dispatch = useDispatch();
-    const { stocks, sectors, loading, error, filters } = useSelector(
+    const { stocks, sectors, loading, error, filters, pagination } = useSelector(
         (state) => state.stock
     );
     const { user } = useSelector((state) => state.auth);
@@ -15,7 +16,6 @@ const StocksWatchlist = () => {
 
     // Fetch stocks and sectors on mount
     useEffect(() => {
-        dispatch(fetchStocks());
         dispatch(fetchSectors());
     }, [dispatch]);
 
@@ -24,27 +24,47 @@ const StocksWatchlist = () => {
         dispatch(fetchStocks(filters));
     }, [filters, dispatch]);
 
+    // Handle WebSocket subscriptions for the current page
+    useEffect(() => {
+        if (stocks && stocks.length > 0) {
+            const symbols = stocks.map(s => s.symbol);
+            websocketService.subscribe(symbols);
+
+            return () => {
+                websocketService.unsubscribe(symbols);
+            };
+        }
+    }, [stocks]);
+
     const handleSearchChange = (e) => {
         setLocalSearch(e.target.value);
     };
 
     const handleSearchSubmit = (e) => {
         e.preventDefault();
-        dispatch(setFilters({ search: localSearch }));
+        dispatch(setFilters({ search: localSearch, page: 1 }));
     };
 
     const handleSectorChange = (e) => {
-        dispatch(setFilters({ sector: e.target.value }));
+        dispatch(setFilters({ sector: e.target.value, page: 1 }));
     };
 
     const handleExchangeChange = (e) => {
-        dispatch(setFilters({ exchange: e.target.value }));
+        dispatch(setFilters({ exchange: e.target.value, page: 1 }));
+    };
+
+    const handlePageChange = (newPage) => {
+        dispatch(setFilters({ page: newPage }));
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const handleClearFilters = () => {
         setLocalSearch('');
         dispatch(clearFilters());
     };
+
+    const totalPages = Math.ceil((pagination?.total || 0) / (pagination?.limit || 100));
+    const currentPage = pagination?.page || 1;
 
     return (
         <div className="min-h-screen bg-neutral-50 dark:bg-neutral-900">
@@ -183,14 +203,14 @@ const StocksWatchlist = () => {
                 )}
 
                 {/* Stocks Grid */}
-                {!loading && !error && stocks.length > 0 && (
+                {!loading && !error && stocks?.length > 0 && (
                     <>
                         <div className="mb-4 flex items-center justify-between">
                             <div className="text-sm text-neutral-600 dark:text-neutral-400">
-                                Showing {stocks.length} stocks
+                                Showing <span className="font-bold text-neutral-900 dark:text-white">{stocks.length}</span> of <span className="font-bold text-neutral-900 dark:text-white">{pagination.total}</span> stocks
                             </div>
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8">
                             {stocks.map((stock) => (
                                 <StockCard
                                     key={stock._id}
@@ -198,11 +218,65 @@ const StocksWatchlist = () => {
                                 />
                             ))}
                         </div>
+
+                        {/* Pagination */}
+                        {totalPages > 1 && (
+                            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-neutral-200 dark:border-neutral-700 pt-8">
+                                <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                                    Page <span className="font-bold text-neutral-900 dark:text-white">{currentPage}</span> of <span className="font-bold text-neutral-900 dark:text-white">{totalPages}</span>
+                                </p>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => handlePageChange(currentPage - 1)}
+                                        disabled={currentPage === 1}
+                                        className="btn-primary py-2 px-4 bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        Previous
+                                    </button>
+
+                                    <div className="hidden sm:flex items-center gap-1">
+                                        {[...Array(Math.min(5, totalPages))].map((_, i) => {
+                                            let pageNum;
+                                            if (totalPages <= 5) {
+                                                pageNum = i + 1;
+                                            } else if (currentPage <= 3) {
+                                                pageNum = i + 1;
+                                            } else if (currentPage >= totalPages - 2) {
+                                                pageNum = totalPages - 4 + i;
+                                            } else {
+                                                pageNum = currentPage - 2 + i;
+                                            }
+
+                                            return (
+                                                <button
+                                                    key={pageNum}
+                                                    onClick={() => handlePageChange(pageNum)}
+                                                    className={`w-10 h-10 rounded-lg text-sm font-medium transition-colors ${currentPage === pageNum
+                                                        ? 'bg-primary-500 text-white'
+                                                        : 'text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800'
+                                                        }`}
+                                                >
+                                                    {pageNum}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+
+                                    <button
+                                        onClick={() => handlePageChange(currentPage + 1)}
+                                        disabled={currentPage === totalPages}
+                                        className="btn-primary py-2 px-4 bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </>
                 )}
 
                 {/* No Results */}
-                {!loading && !error && stocks.length === 0 && (
+                {!loading && !error && stocks?.length === 0 && (
                     <div className="text-center py-12">
                         <p className="text-xl text-neutral-600 dark:text-neutral-400 mb-2">
                             No stocks found

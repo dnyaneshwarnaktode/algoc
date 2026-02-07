@@ -31,10 +31,14 @@ const stockSchema = new mongoose.Schema(
             type: String,
             trim: true,
         },
+        tradingSymbol: {
+            type: String,
+            trim: true,
+        },
         // Base price for initial display (will be updated by real-time data)
         basePrice: {
             type: Number,
-            required: true,
+            default: 0,
             min: 0,
         },
         // Market cap in crores

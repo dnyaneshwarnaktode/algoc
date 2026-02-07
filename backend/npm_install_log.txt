@@ -1,0 +1,14 @@
+﻿node.exe : npm error code ETARGET
+At C:\Program Files\nodejs\npm.ps1:29 char:3
++   & $NODE_EXE $NPM_CLI_JS $args
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (npm error code ETARGET:Strin 
+   g) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+npm error notarget No matching version found for fyers-api-v3@^3.0.1.
+npm error notarget In most cases you or one of your dependencies are 
+requesting
+npm error notarget a package version that doesn't exist.
+npm error A complete log of this run can be found in: C:\Users\prana\AppDa
+ta\Local\npm-cache\_logs\2026-02-07T17_34_23_088Z-debug-0.log

@@ -52,9 +52,6 @@ Create a `package.json` in the **root** folder (`f:\PRojects\AlgoC`) to easily i
     *   `NODE_ENV`: `production`
     *   `MONGO_URI`: (Your MongoDB Atlas Connection String - Ensure Access from Anywhere `0.0.0.0/0` is enabled in Atlas Network Access)
     *   `JWT_SECRET`: (Your Secret)
-    *   `ANGEL_API_KEY`: ...
-    *   `ANGEL_CLIENT_CODE`: ...
-    *   `ANGEL_PIN`: ...
     *   `CLIENT_URL`: `https://algoc-frontend.vercel.app` (You will update this after Frontend deploy)
 6.  Click **"Create Web Service"**.
 7.  **Wait** for deployment. Once live, copy the **Backend URL** (e.g., `https://algoc-backend.onrender.com`).

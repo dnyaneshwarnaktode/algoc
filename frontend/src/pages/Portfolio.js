@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import api from '../services/api';
+import websocketService from '../services/websocketService';
 
 /**
  * Portfolio Page
@@ -25,7 +26,20 @@ const Portfolio = () => {
         if (portfolio && stocks.length > 0) {
             updateCurrentValues();
         }
-    }, [stocks]);
+
+        // Subscribe to held symbols for live updates
+        if (portfolio?.holdings?.length > 0) {
+            const symbols = portfolio.holdings.map(h => h.symbol);
+            websocketService.subscribe(symbols);
+        }
+
+        return () => {
+            if (portfolio?.holdings?.length > 0) {
+                const symbols = portfolio.holdings.map(h => h.symbol);
+                websocketService.unsubscribe(symbols);
+            }
+        };
+    }, [stocks, portfolio?.holdings?.length]);
 
     const fetchPortfolio = async () => {
         try {

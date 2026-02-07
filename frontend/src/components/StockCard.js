@@ -12,13 +12,10 @@ const StockCard = ({ stock }) => {
         navigate(`/stocks/${stock.symbol}`);
     };
 
-    // Use base price (no fluctuations)
-    const currentPrice = stock.basePrice;
-
-    // Calculate a small random change for display purposes only (not saved)
-    const randomChange = (Math.random() - 0.5) * 0.02; // ±1%
-    const change = currentPrice * randomChange;
-    const changePercent = randomChange * 100;
+    // Use currentPrice from Redux (passed via prop) or fallback to basePrice
+    const price = stock.currentPrice || stock.basePrice || 0;
+    const change = stock.change || 0;
+    const changePercent = stock.changePercent || 0;
     const isPositive = change >= 0;
 
     return (
@@ -44,13 +41,13 @@ const StockCard = ({ stock }) => {
             {/* Price */}
             <div className="mb-3">
                 <p className="text-2xl font-bold text-neutral-900 dark:text-white">
-                    ₹{currentPrice.toFixed(2)}
+                    ₹{price.toFixed(2)}
                 </p>
                 <div className="flex items-center gap-2 mt-1">
                     <span
                         className={`text-sm font-semibold ${isPositive
-                                ? 'text-success-600 dark:text-success-400'
-                                : 'text-danger-600 dark:text-danger-400'
+                            ? 'text-success-600 dark:text-success-400'
+                            : 'text-danger-600 dark:text-danger-400'
                             }`}
                     >
                         {isPositive ? '+' : ''}

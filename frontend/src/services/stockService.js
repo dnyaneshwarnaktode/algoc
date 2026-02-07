@@ -18,12 +18,14 @@ export const fetchStocks = (filters = {}) => async (dispatch) => {
         if (filters.search) params.append('search', filters.search);
         if (filters.sector) params.append('sector', filters.sector);
         if (filters.exchange) params.append('exchange', filters.exchange);
+        if (filters.page) params.append('page', filters.page);
+        if (filters.limit) params.append('limit', filters.limit);
 
         const { data } = await api.get(`/stocks?${params.toString()}`);
 
-        dispatch(fetchStocksSuccess(data.data));
+        dispatch(fetchStocksSuccess(data));
 
-        return { success: true, data: data.data };
+        return { success: true, data: data.data, pagination: { total: data.total, page: data.page } };
     } catch (error) {
         const message =
             error.response?.data?.message || 'Failed to fetch stocks';

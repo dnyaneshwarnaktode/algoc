@@ -1,0 +1,11 @@
+Failed: Error: Failed to decode JWT: Invalid JWT: "hsm_key" missing or token is invalid.
+    at decodeJWTAndExtractHSMKey (F:\PRojects\AlgoC\backend\node_modules\fyers-api-v3\HSM\datasocket.min.js:1:22075)
+    at Object.URshU (F:\PRojects\AlgoC\backend\node_modules\fyers-api-v3\HSM\datasocket.min.js:1:22721)
+    at new _0x3061bf (F:\PRojects\AlgoC\backend\node_modules\fyers-api-v3\HSM\datasocket.min.js:1:37032)
+    at [eval]:1:46
+    at runScriptInThisContext (node:internal/vm:209:10)
+    at node:internal/process/execution:449:12
+    at [eval]-wrapper:6:24
+    at runScriptInContext (node:internal/process/execution:447:60)
+    at evalFunction (node:internal/process/execution:87:30)
+    at evalScript (node:internal/process/execution:99:3)
