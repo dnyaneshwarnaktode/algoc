@@ -44,6 +44,9 @@ class MarketDataService {
                 });
             });
 
+            // Try to load existing token from DB for auto-login
+            await fyersAuthService.loadToken();
+
             if (fyersAuthService.isAuthenticated()) {
                 await this.initializeFyers(stocks);
                 console.log(`✅ Market Data Service initialized with ${stocks.length} stocks from Fyers`);

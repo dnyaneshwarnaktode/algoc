@@ -1,23 +1,12 @@
 const fyers = require('fyers-api-v3');
 const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
+const FyersToken = require('../models/FyersToken');
 
 class FyersAuthService {
     constructor() {
         this.fyersModel = new fyers.fyersModel();
         this.accessToken = null;
         this.isInitialized = false;
-        this.tokenFilePath = path.join(__dirname, '../logs/fyers_token.json');
-
-        // Ensure logs directory exists
-        const logDir = path.join(__dirname, '../logs');
-        if (!fs.existsSync(logDir)) {
-            fs.mkdirSync(logDir, { recursive: true });
-        }
-
-        // Auto-load token on creation
-        this.loadToken();
     }
 
     /**
@@ -120,40 +109,43 @@ class FyersAuthService {
     }
 
     /**
-     * Save token to file
+     * Save token to Database
      */
-    saveToken(token) {
+    async saveToken(token) {
         try {
-            const data = {
-                accessToken: token,
-                date: new Date().toLocaleDateString()
-            };
-            fs.writeFileSync(this.tokenFilePath, JSON.stringify(data));
+            const date = new Date().toLocaleDateString();
+            // Upsert today's token
+            await FyersToken.findOneAndUpdate(
+                { date },
+                { accessToken: token },
+                { upsert: true, new: true }
+            );
+            console.log('💾 Fyers token saved to Database');
         } catch (error) {
-            console.error('Error saving Fyers token:', error);
+            console.error('Error saving Fyers token to DB:', error);
         }
     }
 
     /**
-     * Load token from file
+     * Load token from Database
      */
-    loadToken() {
+    async loadToken() {
         try {
-            if (fs.existsSync(this.tokenFilePath)) {
-                const data = JSON.parse(fs.readFileSync(this.tokenFilePath, 'utf8'));
+            const date = new Date().toLocaleDateString();
+            const tokenDoc = await FyersToken.findOne({ date });
 
-                // Fyers tokens expire at 3:00 AM. 
-                // We check if the token was saved today.
-                if (data.date === new Date().toLocaleDateString()) {
-                    this.accessToken = data.accessToken;
-                    this.fyersModel.setAccessToken(this.accessToken);
-                    console.log('📂 Loaded existing Fyers token from file');
-                } else {
-                    console.log('⌛ Existing Fyers token has expired (new day started)');
-                }
+            if (tokenDoc) {
+                this.accessToken = tokenDoc.accessToken;
+                this.fyersModel.setAccessToken(this.accessToken);
+                console.log('📂 Loaded existing Fyers token from Database');
+                return true;
+            } else {
+                console.log('⌛ No valid Fyers token found for today in Database');
+                return false;
             }
         } catch (error) {
-            console.error('Error loading Fyers token:', error);
+            console.error('Error loading Fyers token from DB:', error);
+            return false;
         }
     }
 }
