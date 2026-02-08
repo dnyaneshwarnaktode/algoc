@@ -30,7 +30,18 @@ class FyersSymbolUtility {
             const bulkOps = allStocks.map(stock => ({
                 updateOne: {
                     filter: { symbol: stock.symbol },
-                    update: { $set: stock },
+                    update: {
+                        $set: {
+                            name: stock.name,
+                            exchange: stock.exchange,
+                            isActive: stock.isActive,
+                            tradingSymbol: stock.tradingSymbol
+                        },
+                        $setOnInsert: {
+                            basePrice: 0,
+                            sector: 'Others'
+                        }
+                    },
                     upsert: true
                 }
             }));
@@ -87,8 +98,7 @@ class FyersSymbolUtility {
                     exchange: exchange,
                     isActive: true,
                     sector: 'Others', // Default
-                    tradingSymbol: fyersSymbol,
-                    basePrice: 0 // Defaults to 0, will be updated by real-time data or manual seeding
+                    tradingSymbol: fyersSymbol
                 };
             }).filter(s => s.symbol); // Filter out empty symbols
 

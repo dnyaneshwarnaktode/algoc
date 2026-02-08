@@ -29,16 +29,29 @@ class MarketDataService {
             const Stock = require('../models/Stock');
             const stocks = await Stock.find({ isActive: true });
 
+            // 1. ALWAYS populate cache with WHATEVER we have in DB first
+            // This ensures dashboard shows last known prices (e.g. Friday close) even without login
+            stocks.forEach(stock => {
+                this.priceCache.set(stock.symbol, {
+                    symbol: stock.symbol,
+                    ltp: stock.basePrice || 0,
+                    open: stock.basePrice || 0,
+                    high: stock.basePrice || 0,
+                    low: stock.basePrice || 0,
+                    close: stock.basePrice || 0,
+                    volume: 0,
+                    timestamp: new Date()
+                });
+            });
+
             if (fyersAuthService.isAuthenticated()) {
                 await this.initializeFyers(stocks);
-                this.isInitialized = true;
                 console.log(`✅ Market Data Service initialized with ${stocks.length} stocks from Fyers`);
             } else {
-                console.warn('⚠️ Fyers not authenticated. Prices will remain at 0 until login.');
-                // We still mark as initialized so system doesn't keep trying to boot from scratch
-                // but without actual data feed
-                this.isInitialized = true;
+                console.warn('⚠️ Fyers not authenticated. Using last known prices from Database.');
             }
+
+            this.isInitialized = true;
         } catch (error) {
             console.error('❌ Failed to initialize Market Data Service:', error);
             throw error;
@@ -57,9 +70,12 @@ class MarketDataService {
         console.log('📡 Fyers socket initialization status:', connected);
 
         if (connected) {
-            // 1. Fetch initial quotes to populate cache with real prices immediately
+            // 2. Fetch fresh quotes to update DB and Cache with latest prices
             try {
-                const symbols = stocks.map(s => fyersDataService.formatSymbol(s.symbol));
+                // Use tradingSymbol (NSE:SBIN-EQ) if available, else format it
+                const symbols = stocks.map(s => s.tradingSymbol || fyersDataService.formatSymbol(s.symbol));
+                const Stock = require('../models/Stock');
+                const bulkOps = [];
 
                 // Fetch in chunks of 50
                 for (let i = 0; i < symbols.length; i += 50) {
@@ -70,35 +86,54 @@ class MarketDataService {
                         response.d.forEach(quote => {
                             const symbol = fyersDataService.stripSymbolExtras(quote.n);
                             const v = quote.v; // Value object
+                            const ltp = v.lp || v.prev_close || v.cp;
 
-                            this.updatePrice({
-                                symbol: symbol,
-                                ltp: v.lp,
-                                open: v.on,
-                                high: v.h,
-                                low: v.l,
-                                close: v.prev_close || v.cp,
-                                volume: v.vol,
-                                timestamp: new Date()
-                            });
+                            if (ltp) {
+                                // Update Cache
+                                this.updatePrice({
+                                    symbol: symbol,
+                                    ltp: ltp,
+                                    open: v.on,
+                                    high: v.h,
+                                    low: v.l,
+                                    close: v.prev_close || v.cp,
+                                    volume: v.vol,
+                                    timestamp: new Date()
+                                });
+
+                                // Prepare DB update to persist this as "Last Closing Price"
+                                bulkOps.push({
+                                    updateOne: {
+                                        filter: { symbol: symbol },
+                                        update: { $set: { basePrice: ltp } }
+                                    }
+                                });
+                            }
                         });
                     }
                 }
-                console.log('✅ Initial quotes fetched from Fyers');
+
+                // Persist to DB so it survives restarts without fresh login
+                if (bulkOps.length > 0) {
+                    await Stock.bulkWrite(bulkOps);
+                    console.log(`💾 Persisted ${bulkOps.length} market prices to Database`);
+                }
+                console.log('✅ Initial quotes fetched from Fyers and synced to DB');
             } catch (quoteError) {
-                console.warn('⚠️ Failed to fetch initial quotes, will rely on WebSocket ticks:', quoteError.message);
+                console.warn('⚠️ Failed to fetch initial quotes, using DB prices as fallback:', quoteError.message);
             }
 
-            // 2. Register price update callback
+            // 3. Register price update callback for live ticks
             fyersDataService.onPriceUpdate((data) => {
                 this.updatePrice(data);
             });
 
-            // 3. Subscribe to all symbols
-            const symbols = stocks.map(s => s.symbol);
-            fyersDataService.subscribe(symbols);
+            // 4. Subscribe to all symbols for continuous updates
+            // Use symbols from DB as they are the keys in our cache
+            const dbSymbols = stocks.map(s => s.symbol);
+            fyersDataService.subscribe(dbSymbols);
 
-            console.log('✅ Fyers mode initialized');
+            console.log('✅ Fyers WebSocket mode active');
         } else {
             console.error('❌ fyersDataService.initialize() returned false');
             throw new Error('Failed to initialize Fyers Data Socket. Check if token is valid or logs directory is writable.');
