@@ -83,15 +83,20 @@ class MarketDataService {
                 // Fetch in chunks of 50
                 for (let i = 0; i < symbols.length; i += 50) {
                     const chunk = symbols.slice(i, i + 50);
+                    console.log(`📦 Fetching quotes for chunk ${i / 50 + 1}...`);
                     const response = await fyersAuthService.getQuotes(chunk);
 
                     if (response.s === 'ok' && response.d) {
+                        console.log(`📡 Recieved ${response.d.length} quotes from Fyers`);
                         response.d.forEach(quote => {
                             const symbol = fyersDataService.stripSymbolExtras(quote.n);
                             const v = quote.v; // Value object
-                            const ltp = v.lp || v.prev_close || v.cp;
 
-                            if (ltp) {
+                            // Try to get ANY valid price (Last Price, Prev Close, or Close Price)
+                            // On Sunday, LP might be 0, but prev_close should exist
+                            const ltp = v.lp || v.prev_close || v.cp || 0;
+
+                            if (ltp >= 0) {
                                 // Update Cache
                                 this.updatePrice({
                                     symbol: symbol,
@@ -100,11 +105,10 @@ class MarketDataService {
                                     high: v.h,
                                     low: v.l,
                                     close: v.prev_close || v.cp,
-                                    volume: v.vol,
-                                    timestamp: new Date()
+                                    volume: v.vol
                                 });
 
-                                // Prepare DB update to persist this as "Last Closing Price"
+                                // Prepare DB update
                                 bulkOps.push({
                                     updateOne: {
                                         filter: { symbol: symbol },
@@ -113,17 +117,18 @@ class MarketDataService {
                                 });
                             }
                         });
+                    } else {
+                        console.error('❌ Fyers Quote API failed for chunk:', response?.message || 'Unknown error');
                     }
                 }
 
-                // Persist to DB so it survives restarts without fresh login
                 if (bulkOps.length > 0) {
                     await Stock.bulkWrite(bulkOps);
-                    console.log(`💾 Persisted ${bulkOps.length} market prices to Database`);
+                    console.log(`💾 Persisted ${bulkOps.length} real prices to Database`);
                 }
-                console.log('✅ Initial quotes fetched from Fyers and synced to DB');
+                console.log('✅ Initial quotes sync complete');
             } catch (quoteError) {
-                console.warn('⚠️ Failed to fetch initial quotes, using DB prices as fallback:', quoteError.message);
+                console.error('❌ Critical error in initial quote fetch:', quoteError);
             }
 
             // 3. Register price update callback for live ticks
@@ -149,14 +154,16 @@ class MarketDataService {
     updatePrice(priceData) {
         const existing = this.priceCache.get(priceData.symbol) || {};
 
+        // We use || to fallback to existing data only if new data is undefined/null
+        // NOT if it is 0.
         const updated = {
             symbol: priceData.symbol,
-            ltp: priceData.ltp || priceData.price || existing.ltp,
-            open: priceData.open || existing.open,
-            high: priceData.high || existing.high,
-            low: priceData.low || existing.low,
-            close: priceData.close || existing.close,
-            volume: priceData.volume || existing.volume,
+            ltp: priceData.ltp !== undefined ? priceData.ltp : (priceData.price !== undefined ? priceData.price : existing.ltp),
+            open: priceData.open !== undefined ? priceData.open : existing.open,
+            high: priceData.high !== undefined ? priceData.high : existing.high,
+            low: priceData.low !== undefined ? priceData.low : existing.low,
+            close: priceData.close !== undefined ? priceData.close : existing.close,
+            volume: priceData.volume !== undefined ? priceData.volume : existing.volume,
             timestamp: new Date()
         };
 

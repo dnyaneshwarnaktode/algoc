@@ -113,14 +113,14 @@ class FyersAuthService {
      */
     async saveToken(token) {
         try {
-            const date = new Date().toLocaleDateString();
+            const date = new Date().toISOString().split('T')[0];
             // Upsert today's token
             await FyersToken.findOneAndUpdate(
                 { date },
                 { accessToken: token },
                 { upsert: true, new: true }
             );
-            console.log('💾 Fyers token saved to Database');
+            console.log(`💾 Fyers token saved to Database for ${date}`);
         } catch (error) {
             console.error('Error saving Fyers token to DB:', error);
         }
@@ -131,16 +131,16 @@ class FyersAuthService {
      */
     async loadToken() {
         try {
-            const date = new Date().toLocaleDateString();
+            const date = new Date().toISOString().split('T')[0];
             const tokenDoc = await FyersToken.findOne({ date });
 
             if (tokenDoc) {
                 this.accessToken = tokenDoc.accessToken;
                 this.fyersModel.setAccessToken(this.accessToken);
-                console.log('📂 Loaded existing Fyers token from Database');
+                console.log(`📂 Loaded existing Fyers token from Database (${date})`);
                 return true;
             } else {
-                console.log('⌛ No valid Fyers token found for today in Database');
+                console.log(`⌛ No valid Fyers token found for ${date} in Database`);
                 return false;
             }
         } catch (error) {
