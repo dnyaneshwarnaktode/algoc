@@ -107,7 +107,7 @@ class FyersDataService {
     handleMessage(message) {
         // Fyers V3 Data Socket returns data in a structured format
         // We need to normalize it for our MarketDataService
-        if (message.type === 'dp' || message.type === 'sf') { // Data packet or Stock feed
+        if (message.type === 'dp' || message.type === 'sf' || message.type === 'if') { // Data packet, Stock feed, or Index feed
             const normalizedData = {
                 symbol: this.stripSymbolExtras(message.symbol || message.n),
                 ltp: message.ltp || message.lp,

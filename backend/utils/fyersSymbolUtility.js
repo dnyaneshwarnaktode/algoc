@@ -88,7 +88,7 @@ class FyersSymbolUtility {
                     isActive: true,
                     sector: 'Others', // Default
                     tradingSymbol: fyersSymbol,
-                    basePrice: Math.floor(Math.random() * (2000 - 100 + 1)) + 100 // Default random price between 100 and 2000
+                    basePrice: 0 // Defaults to 0, will be updated by real-time data or manual seeding
                 };
             }).filter(s => s.symbol); // Filter out empty symbols
 

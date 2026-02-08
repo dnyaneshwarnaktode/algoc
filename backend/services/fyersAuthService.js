@@ -1,11 +1,23 @@
 const fyers = require('fyers-api-v3');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 class FyersAuthService {
     constructor() {
         this.fyersModel = new fyers.fyersModel();
         this.accessToken = null;
         this.isInitialized = false;
+        this.tokenFilePath = path.join(__dirname, '../logs/fyers_token.json');
+
+        // Ensure logs directory exists
+        const logDir = path.join(__dirname, '../logs');
+        if (!fs.existsSync(logDir)) {
+            fs.mkdirSync(logDir, { recursive: true });
+        }
+
+        // Auto-load token on creation
+        this.loadToken();
     }
 
     /**
@@ -57,7 +69,8 @@ class FyersAuthService {
             if (response.s === 'ok') {
                 this.accessToken = response.access_token;
                 this.fyersModel.setAccessToken(this.accessToken);
-                console.log('✅ Fyers Access Token generated successfully');
+                this.saveToken(this.accessToken);
+                console.log('✅ Fyers Access Token generated and saved');
                 return { success: true, accessToken: this.accessToken };
             } else {
                 console.error('❌ Fyers Access Token generation failed. Response:', JSON.stringify(response, null, 2));
@@ -87,6 +100,61 @@ class FyersAuthService {
 
     isAuthenticated() {
         return !!this.accessToken;
+    }
+
+    /**
+     * Get quotes for symbols
+     * @param {string[]} symbols - Array of symbols (e.g. ['NSE:SBIN-EQ', 'NSE:RELIANCE-EQ'])
+     */
+    async getQuotes(symbols) {
+        try {
+            if (!this.isAuthenticated()) throw new Error('Not authenticated with Fyers');
+
+            // Fyers limit for quotes is 50 symbols per request
+            const quotes = await this.fyersModel.get_quotes({ symbols: symbols.join(',') });
+            return quotes;
+        } catch (error) {
+            console.error('Error fetching Fyers quotes:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Save token to file
+     */
+    saveToken(token) {
+        try {
+            const data = {
+                accessToken: token,
+                date: new Date().toLocaleDateString()
+            };
+            fs.writeFileSync(this.tokenFilePath, JSON.stringify(data));
+        } catch (error) {
+            console.error('Error saving Fyers token:', error);
+        }
+    }
+
+    /**
+     * Load token from file
+     */
+    loadToken() {
+        try {
+            if (fs.existsSync(this.tokenFilePath)) {
+                const data = JSON.parse(fs.readFileSync(this.tokenFilePath, 'utf8'));
+
+                // Fyers tokens expire at 3:00 AM. 
+                // We check if the token was saved today.
+                if (data.date === new Date().toLocaleDateString()) {
+                    this.accessToken = data.accessToken;
+                    this.fyersModel.setAccessToken(this.accessToken);
+                    console.log('📂 Loaded existing Fyers token from file');
+                } else {
+                    console.log('⌛ Existing Fyers token has expired (new day started)');
+                }
+            }
+        } catch (error) {
+            console.error('Error loading Fyers token:', error);
+        }
     }
 }
 

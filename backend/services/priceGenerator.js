@@ -39,8 +39,11 @@ class PriceGenerator {
         const randomChange = (Math.random() - 0.5) * 2 * volatility;
 
         // Mean reversion component (pulls price back to base)
-        const deviation = (currentPrice - basePrice) / basePrice;
-        const reversionForce = -deviation * meanReversion;
+        let reversionForce = 0;
+        if (basePrice > 0) {
+            const deviation = (currentPrice - basePrice) / basePrice;
+            reversionForce = -deviation * meanReversion;
+        }
 
         // Calculate new price
         const priceChange = currentPrice * (randomChange + reversionForce);

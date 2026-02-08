@@ -1,5 +1,3 @@
-const Stock = require('../models/Stock');
-const priceGenerator = require('./priceGenerator');
 const fyersAuthService = require('./fyersAuthService');
 const fyersDataService = require('./fyersDataService');
 
@@ -9,11 +7,10 @@ const fyersDataService = require('./fyersDataService');
  */
 class MarketDataService {
     constructor() {
-        this.mode = process.env.MARKET_DATA_SOURCE || 'SIMULATED';
+        this.mode = 'FYERS'; // Forced to FYERS as requested
         this.priceCache = new Map(); // symbol -> { ltp, ohlc, volume, timestamp }
         this.subscribers = new Map(); // symbol -> Set of callbacks
         this.isInitialized = false;
-        this.simulatedInterval = null;
     }
 
     /**
@@ -26,53 +23,29 @@ class MarketDataService {
         }
 
         try {
-            console.log(`📊 Initializing Market Data Service (Mode: ${this.mode})`);
+            console.log(`📊 Initializing Market Data Service (Forced Mode: ${this.mode})`);
 
-            // Load all active stocks
+            // Load all active stocks from DB
+            const Stock = require('../models/Stock');
             const stocks = await Stock.find({ isActive: true });
 
-            if (this.mode === 'FYERS' && fyersAuthService.isAuthenticated()) {
+            if (fyersAuthService.isAuthenticated()) {
                 await this.initializeFyers(stocks);
+                this.isInitialized = true;
+                console.log(`✅ Market Data Service initialized with ${stocks.length} stocks from Fyers`);
             } else {
-                if (this.mode === 'FYERS') {
-                    console.log('⚠️ Fyers not authenticated, falling back to SIMULATED');
-                    this.mode = 'SIMULATED';
-                }
-                await this.initializeSimulated(stocks);
+                console.warn('⚠️ Fyers not authenticated. Prices will remain at 0 until login.');
+                // We still mark as initialized so system doesn't keep trying to boot from scratch
+                // but without actual data feed
+                this.isInitialized = true;
             }
-
-            this.isInitialized = true;
-            console.log(`✅ Market Data Service initialized with ${stocks.length} stocks`);
         } catch (error) {
             console.error('❌ Failed to initialize Market Data Service:', error);
             throw error;
         }
     }
 
-    /**
-     * Initialize Simulated mode
-     */
-    async initializeSimulated(stocks) {
-        console.log('🎮 Initializing Simulated mode...');
 
-        stocks.forEach(stock => {
-            this.priceCache.set(stock.symbol, {
-                symbol: stock.symbol,
-                ltp: stock.basePrice,
-                open: stock.basePrice,
-                high: stock.basePrice * 1.02,
-                low: stock.basePrice * 0.98,
-                close: stock.basePrice,
-                volume: Math.floor(Math.random() * 1000000),
-                timestamp: new Date()
-            });
-
-            // Initialize simulated price generator
-            priceGenerator.initializeStock(stock.symbol, stock.basePrice);
-        });
-
-        console.log('✅ Simulated mode initialized');
-    }
 
     /**
      * Initialize Fyers mode
@@ -84,12 +57,44 @@ class MarketDataService {
         console.log('📡 Fyers socket initialization status:', connected);
 
         if (connected) {
-            // Register price update callback
+            // 1. Fetch initial quotes to populate cache with real prices immediately
+            try {
+                const symbols = stocks.map(s => fyersDataService.formatSymbol(s.symbol));
+
+                // Fetch in chunks of 50
+                for (let i = 0; i < symbols.length; i += 50) {
+                    const chunk = symbols.slice(i, i + 50);
+                    const response = await fyersAuthService.getQuotes(chunk);
+
+                    if (response.s === 'ok' && response.d) {
+                        response.d.forEach(quote => {
+                            const symbol = fyersDataService.stripSymbolExtras(quote.n);
+                            const v = quote.v; // Value object
+
+                            this.updatePrice({
+                                symbol: symbol,
+                                ltp: v.lp,
+                                open: v.on,
+                                high: v.h,
+                                low: v.l,
+                                close: v.prev_close || v.cp,
+                                volume: v.vol,
+                                timestamp: new Date()
+                            });
+                        });
+                    }
+                }
+                console.log('✅ Initial quotes fetched from Fyers');
+            } catch (quoteError) {
+                console.warn('⚠️ Failed to fetch initial quotes, will rely on WebSocket ticks:', quoteError.message);
+            }
+
+            // 2. Register price update callback
             fyersDataService.onPriceUpdate((data) => {
                 this.updatePrice(data);
             });
 
-            // Subscribe to all symbols
+            // 3. Subscribe to all symbols
             const symbols = stocks.map(s => s.symbol);
             fyersDataService.subscribe(symbols);
 
@@ -127,13 +132,6 @@ class MarketDataService {
      * Get Last Traded Price for a symbol
      */
     getLTP(symbol) {
-        if (this.mode === 'SIMULATED') {
-            const simPrice = priceGenerator.getCurrentPrice(symbol);
-            if (simPrice) {
-                return simPrice.price;
-            }
-        }
-
         const cached = this.priceCache.get(symbol);
         return cached ? cached.ltp : null;
     }
@@ -203,20 +201,10 @@ class MarketDataService {
             await this.initialize();
         }
 
-        if (this.mode === 'SIMULATED') {
-            // Simulated mode: generate prices periodically
-            if (this.simulatedInterval) clearInterval(this.simulatedInterval);
-            this.simulatedInterval = setInterval(() => {
-                this.priceCache.forEach((_, symbol) => {
-                    const priceUpdate = priceGenerator.generateNextPrice(symbol);
-                    if (priceUpdate) {
-                        this.updatePrice(priceUpdate);
-                    }
-                });
-            }, 2000); // Update every 2 seconds
-            console.log('📈 Simulated market feed started');
-        } else {
+        if (this.mode === 'FYERS' && fyersAuthService.isAuthenticated()) {
             console.log('📈 Fyers market feed active via WebSocket');
+        } else {
+            console.warn('⚠️ Market feed cannot start: Fyers not authenticated');
         }
     }
 
@@ -224,32 +212,14 @@ class MarketDataService {
      * Stop market data feed
      */
     stopMarketFeed() {
-        if (this.simulatedInterval) {
-            clearInterval(this.simulatedInterval);
-            this.simulatedInterval = null;
-        }
-
-        if (this.mode === 'FYERS') {
-            // Fyers WebSocket cleanup if needed
-        }
-
         console.log('⏹️ Market data feed stopped');
     }
 
     /**
-     * Change mode dynamically
+     * Change mode dynamically (Disabled as requested)
      */
     async setMode(newMode) {
-        if (newMode === this.mode) return;
-
-        console.log(`🔄 Switching Market Data Source: ${this.mode} -> ${newMode}`);
-
-        this.stopMarketFeed();
-        this.mode = newMode;
-        this.isInitialized = false;
-
-        await this.initialize();
-        this.startMarketFeed();
+        console.log(`🚫 Switch ignored: System forced to FYERS mode. Requested: ${newMode}`);
     }
 
     /**
@@ -279,13 +249,13 @@ class MarketDataService {
             // Use basePrice or a reasonable default (100) if not set
             const basePrice = stock.basePrice || 100;
 
-            if (this.mode === 'FYERS' && fyersAuthService.isAuthenticated()) {
+            if (fyersAuthService.isAuthenticated()) {
                 // In Fyers mode, we just need to subscribe if socket is active
                 if (fyersDataService.getStatus().isConnected) {
                     fyersDataService.subscribe([symbol]);
                 }
 
-                // Set initial empty entry in cache
+                // Set initial entry in cache
                 this.priceCache.set(symbol, {
                     symbol: symbol,
                     ltp: basePrice,
@@ -296,20 +266,27 @@ class MarketDataService {
                     volume: 0,
                     timestamp: new Date()
                 });
-            } else {
-                // In Simulated mode, initialize in price cache and generator
-                this.priceCache.set(symbol, {
-                    symbol: symbol,
-                    ltp: basePrice,
-                    open: basePrice,
-                    high: basePrice * 1.02,
-                    low: basePrice * 0.98,
-                    close: basePrice,
-                    volume: Math.floor(Math.random() * 1000000),
-                    timestamp: new Date()
-                });
 
-                priceGenerator.initializeStock(symbol, basePrice);
+                // Try to get a real quote immediately for this new stock
+                try {
+                    const response = await fyersAuthService.getQuotes([fyersDataService.formatSymbol(symbol)]);
+                    if (response.s === 'ok' && response.d?.[0]) {
+                        const v = response.d[0].v;
+                        this.updatePrice({
+                            symbol: symbol,
+                            ltp: v.lp,
+                            open: v.on,
+                            high: v.h,
+                            low: v.l,
+                            close: v.prev_close || v.cp,
+                            volume: v.vol
+                        });
+                    }
+                } catch (e) {
+                    console.warn(`Could not get immediate quote for ${symbol}`);
+                }
+            } else {
+                return false;
             }
 
             return true;

@@ -217,9 +217,9 @@ const AdminSettings = () => {
                         <div className="p-4 bg-neutral-50 dark:bg-neutral-800 rounded-lg border border-neutral-200 dark:border-neutral-700">
                             <p className="text-sm text-neutral-500 mb-1">Data Source</p>
                             <p className="font-bold text-neutral-900 dark:text-white">
-                                {fyersStatus.marketDataMode === 'FYERS' ? 'LIVE (FYERS)' : 'SIMULATED'}
+                                LIVE (FYERS)
                             </p>
-                            <p className="text-xs text-neutral-400 mt-2">Current feed type in use</p>
+                            <p className="text-xs text-neutral-400 mt-2">Always active on system start</p>
                         </div>
 
                         <div className="flex flex-col gap-3 justify-center">
@@ -232,13 +232,13 @@ const AdminSettings = () => {
                                 </button>
                             ) : (
                                 <>
-                                    <button
-                                        onClick={handleActivateFyers}
-                                        disabled={fyersStatus.marketDataMode === 'FYERS' || activating}
-                                        className="btn-primary py-2.5 bg-green-600 hover:bg-green-700 disabled:bg-neutral-400 text-white rounded-lg shadow-md transition-all font-semibold"
-                                    >
-                                        {fyersStatus.marketDataMode === 'FYERS' ? 'Fyers Feed Active' : 'Switch to Fyers Feed'}
-                                    </button>
+                                    <div className="flex items-center justify-center gap-2 py-2 px-4 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 rounded-lg border border-green-100 dark:border-green-900/30">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                                            <polyline points="22 4 12 14.01 9 11.01" />
+                                        </svg>
+                                        <span className="font-semibold">Feed Ready</span>
+                                    </div>
                                     <button
                                         onClick={handleSyncStocks}
                                         disabled={activating}
