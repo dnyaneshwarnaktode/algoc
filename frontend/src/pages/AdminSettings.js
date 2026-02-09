@@ -112,15 +112,30 @@ const AdminSettings = () => {
     };
 
     const handleSyncStocks = async () => {
-        if (activating) return; // Reuse activating state for loading
+        if (activating) return;
         setActivating(true);
         try {
             const { data } = await api.post('/stocks/sync-fyers');
             if (data.success) {
-                alert(`Successfully synced ${data.data.total} stocks from Fyers!`);
+                alert(`Successfully synced ${data.data.total} stocks from Fyers! Now click "Refresh Market Data" to update prices.`);
             }
         } catch (error) {
             alert(error.response?.data?.message || 'Failed to sync stocks');
+        } finally {
+            setActivating(false);
+        }
+    };
+
+    const handleRefreshPrices = async () => {
+        if (activating) return;
+        setActivating(true);
+        try {
+            const { data } = await api.post('/fyers/refresh-prices');
+            if (data.success) {
+                alert('Market data refresh triggered! Prices should update in a few seconds.');
+            }
+        } catch (error) {
+            alert(error.response?.data?.message || 'Failed to refresh prices');
         } finally {
             setActivating(false);
         }
@@ -244,7 +259,14 @@ const AdminSettings = () => {
                                         disabled={activating}
                                         className="btn-primary py-2.5 bg-neutral-600 hover:bg-neutral-700 disabled:bg-neutral-400 text-white rounded-lg shadow-md transition-all font-semibold"
                                     >
-                                        {activating ? 'Syncing...' : 'Sync Stocks from Fyers'}
+                                        {activating ? 'Syncing...' : '1. Sync Stocks'}
+                                    </button>
+                                    <button
+                                        onClick={handleRefreshPrices}
+                                        disabled={activating}
+                                        className="btn-primary py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-neutral-400 text-white rounded-lg shadow-md transition-all font-semibold"
+                                    >
+                                        {activating ? 'Refreshing...' : '2. Refresh Market Data'}
                                     </button>
                                 </>
                             )}

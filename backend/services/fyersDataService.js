@@ -9,12 +9,18 @@ class FyersDataService {
         this.isConnected = false;
         this.callbacks = new Set();
         this.subscribedSymbols = new Set();
+        this.tokenMap = new Map(); // Map Fyers token (tk) to symbol
     }
 
     /**
      * Initialize Fyers Data Socket
      */
     async initialize() {
+        if (this.isConnected && this.dataSocket) {
+            console.log('📡 Fyers Data Socket already connected');
+            return true;
+        }
+
         const accessToken = fyersAuthService.getAccessToken();
         if (!accessToken) {
             console.error('❌ Cannot initialize Fyers Data Socket: No Access Token');
@@ -105,16 +111,42 @@ class FyersDataService {
      * Handle incoming WebSocket messages
      */
     handleMessage(message) {
+        if (!message) return;
+
+        // Handle array of messages
+        if (Array.isArray(message)) {
+            message.forEach(msg => this.processSingleMessage(msg));
+        } else if (message.data && Array.isArray(message.data)) {
+            // Some versions/types wrap the array in a data property
+            message.data.forEach(msg => this.processSingleMessage(msg));
+        } else {
+            this.processSingleMessage(message);
+        }
+    }
+
+    processSingleMessage(message) {
         // Fyers V3 Data Socket returns data in a structured format
-        // We need to normalize it for our MarketDataService
-        if (message.type === 'dp' || message.type === 'sf' || message.type === 'if') { // Data packet, Stock feed, or Index feed
+        if (message.type === 'dp' || message.type === 'sf' || message.type === 'if' || message.ltp !== undefined) {
+            const rawSymbol = message.symbol || message.n || message.ts;
+            const token = message.tk;
+
+            // If we have symbol info, update our token map
+            if (rawSymbol && token) {
+                this.tokenMap.set(token, this.stripSymbolExtras(rawSymbol));
+            }
+
+            // Get symbol from message or from our token map
+            const symbol = rawSymbol ? this.stripSymbolExtras(rawSymbol) : this.tokenMap.get(token);
+
+            if (!symbol) return;
+
             const normalizedData = {
-                symbol: this.stripSymbolExtras(message.symbol || message.n),
+                symbol,
                 ltp: message.ltp || message.lp,
                 open: message.open || message.on,
                 high: message.high || message.h,
                 low: message.low || message.l,
-                close: message.prev_close || message.cp,
+                close: message.prev_close || message.cp || message.c,
                 volume: message.vol || message.v,
                 timestamp: new Date()
             };
@@ -125,8 +157,13 @@ class FyersDataService {
 
     stripSymbolExtras(fyersSymbol) {
         if (!fyersSymbol) return '';
-        // NSE:RELIANCE-EQ -> RELIANCE
-        return fyersSymbol.split(':')[1]?.split('-')[0] || fyersSymbol;
+        // Handle both "NSE:RELIANCE-EQ" and "RELIANCE-EQ"
+        let symbol = fyersSymbol;
+        if (symbol.includes(':')) {
+            symbol = symbol.split(':')[1];
+        }
+        // Strip suffixes like -EQ, -BE, etc.
+        return symbol.split('-')[0];
     }
 
     onPriceUpdate(callback) {

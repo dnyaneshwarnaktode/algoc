@@ -73,11 +73,17 @@ const StocksWatchlist = () => {
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
                     <div className="flex items-center justify-between mb-4">
                         <div>
-                            <h1 className="text-3xl font-bold text-neutral-900 dark:text-white">
-                                Stocks Watchlist
-                            </h1>
+                            <div className="flex items-center gap-3">
+                                <h1 className="text-3xl font-bold text-neutral-900 dark:text-white">
+                                    Stocks Watchlist
+                                </h1>
+                                <span className="px-3 py-1 text-xs font-semibold bg-success-100 dark:bg-success-900/30 text-success-700 dark:text-success-400 rounded-full flex items-center gap-1">
+                                    <span className="w-2 h-2 bg-success-500 rounded-full animate-pulse"></span>
+                                    Live Prices
+                                </span>
+                            </div>
                             <p className="text-neutral-600 dark:text-neutral-400 mt-1">
-                                Browse and track your favorite stocks
+                                Showing only stocks with live prices from Fyers
                             </p>
                         </div>
                         <div className="text-right">

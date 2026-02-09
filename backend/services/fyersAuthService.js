@@ -58,8 +58,8 @@ class FyersAuthService {
             if (response.s === 'ok') {
                 this.accessToken = response.access_token;
                 this.fyersModel.setAccessToken(this.accessToken);
-                this.saveToken(this.accessToken);
-                console.log('✅ Fyers Access Token generated and saved');
+                await this.saveToken(this.accessToken);
+                console.log('✅ Fyers Access Token generated and saved to Database');
                 return { success: true, accessToken: this.accessToken };
             } else {
                 console.error('❌ Fyers Access Token generation failed. Response:', JSON.stringify(response, null, 2));
@@ -98,12 +98,14 @@ class FyersAuthService {
     async getQuotes(symbols) {
         try {
             if (!this.isAuthenticated()) throw new Error('Not authenticated with Fyers');
+            if (!this.isInitialized) this.initialize();
 
+            console.log(`📡 Requesting Fyers quotes for ${symbols.length} symbols...`);
             // Fyers limit for quotes is 50 symbols per request
             const quotes = await this.fyersModel.get_quotes({ symbols: symbols.join(',') });
             return quotes;
         } catch (error) {
-            console.error('Error fetching Fyers quotes:', error);
+            console.error('❌ Error fetching Fyers quotes:', error);
             throw error;
         }
     }
@@ -131,6 +133,8 @@ class FyersAuthService {
      */
     async loadToken() {
         try {
+            if (!this.isInitialized) this.initialize();
+
             const date = new Date().toISOString().split('T')[0];
             const tokenDoc = await FyersToken.findOne({ date });
 

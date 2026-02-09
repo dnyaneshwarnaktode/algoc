@@ -9,7 +9,7 @@ const marketDataService = require('../services/marketDataService');
  */
 const getStocks = async (req, res) => {
     try {
-        const { search, sector, exchange, limit = 200, page = 1 } = req.query;
+        const { search, sector, exchange, limit = 200, page = 1, liveOnly = 'true' } = req.query;
         const skip = (parseInt(page) - 1) * parseInt(limit);
 
         // Build query
@@ -33,20 +33,78 @@ const getStocks = async (req, res) => {
             query.exchange = exchange;
         }
 
-        const totalStocks = await Stock.countDocuments(query);
-        const stocks = await Stock.find(query)
-            .sort({ symbol: 1 })
-            .skip(skip)
-            .limit(parseInt(limit));
-
-        res.status(200).json({
-            success: true,
-            total: totalStocks,
-            page: parseInt(page),
-            limit: parseInt(limit),
-            count: stocks.length,
-            data: stocks,
-        });
+        // Get all matching stocks from DB
+        const allStocks = await Stock.find(query).sort({ symbol: 1 });
+        
+        // Filter stocks with live prices from Fyers if liveOnly is true
+        let stocksWithLivePrices = [];
+        if (liveOnly === 'true' && marketDataService.getMode() === 'FYERS') {
+            // Get all stocks that have non-zero prices in marketDataService cache
+            for (const stock of allStocks) {
+                const marketData = marketDataService.getMarketData(stock.symbol);
+                if (marketData && marketData.ltp > 0) {
+                    // Enrich stock with live price data
+                    const enrichedStock = stock.toObject();
+                    enrichedStock.currentPrice = marketData.ltp;
+                    enrichedStock.basePrice = marketData.ltp; // Update basePrice with live price
+                    const closePrice = marketData.close || marketData.ltp;
+                    enrichedStock.change = marketData.ltp - closePrice;
+                    enrichedStock.changePercent = closePrice > 0 
+                        ? ((marketData.ltp - closePrice) / closePrice) * 100 
+                        : 0;
+                    enrichedStock.open = marketData.open;
+                    enrichedStock.high = marketData.high;
+                    enrichedStock.low = marketData.low;
+                    enrichedStock.close = marketData.close;
+                    enrichedStock.volume = marketData.volume;
+                    enrichedStock.timestamp = marketData.timestamp;
+                    stocksWithLivePrices.push(enrichedStock);
+                }
+            }
+            
+            // Apply pagination to filtered results
+            const totalStocks = stocksWithLivePrices.length;
+            const paginatedStocks = stocksWithLivePrices.slice(skip, skip + parseInt(limit));
+            
+            res.status(200).json({
+                success: true,
+                total: totalStocks,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                count: paginatedStocks.length,
+                data: paginatedStocks,
+                liveOnly: true,
+            });
+        } else {
+            // Return all stocks without live price filtering
+            const totalStocks = allStocks.length;
+            const stocks = allStocks.slice(skip, skip + parseInt(limit));
+            
+            // Still enrich with live prices if available
+            const enrichedStocks = stocks.map(stock => {
+                const stockObj = stock.toObject();
+                const marketData = marketDataService.getMarketData(stock.symbol);
+                if (marketData && marketData.ltp > 0) {
+                    const closePrice = marketData.close || marketData.ltp;
+                    stockObj.currentPrice = marketData.ltp;
+                    stockObj.change = marketData.ltp - closePrice;
+                    stockObj.changePercent = closePrice > 0 
+                        ? ((marketData.ltp - closePrice) / closePrice) * 100 
+                        : 0;
+                }
+                return stockObj;
+            });
+            
+            res.status(200).json({
+                success: true,
+                total: totalStocks,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                count: enrichedStocks.length,
+                data: enrichedStocks,
+                liveOnly: false,
+            });
+        }
     } catch (error) {
         console.error('Get stocks error:', error);
         res.status(500).json({

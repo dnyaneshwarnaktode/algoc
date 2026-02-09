@@ -155,3 +155,30 @@ exports.deactivateFyers = async (req, res) => {
         });
     }
 };
+
+/**
+ * @desc    Force Refresh All Market Prices
+ * @route   POST /api/fyers/refresh-prices
+ * @access  Private/Admin
+ */
+exports.refreshPrices = async (req, res) => {
+    try {
+        const success = await marketDataService.refreshPrices();
+        if (success) {
+            res.status(200).json({
+                success: true,
+                message: 'Market prices refresh triggered'
+            });
+        } else {
+            res.status(400).json({
+                success: false,
+                message: 'Failed to refresh prices. Ensure Fyers is authenticated.'
+            });
+        }
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
