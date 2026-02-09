@@ -3,6 +3,7 @@ const Holding = require('../models/Holding');
 const Stock = require('../models/Stock');
 const User = require('../models/User');
 const marketDataService = require('./marketDataService');
+const { calculateCharges, calculatePnL } = require('../utils/calculateCharges');
 
 /**
  * Order Execution Engine
@@ -29,11 +30,20 @@ class OrderExecutor {
             }
 
             // Apply slippage for paper trading
-            const executionPrice = this.mode === 'PAPER'
+            const buyPrice = this.mode === 'PAPER'
                 ? ltp * (1 + this.slippagePercent / 100)
                 : ltp;
 
-            const totalAmount = quantity * executionPrice;
+            // Find stock to get exchange
+            const stock = await Stock.findOne({ symbol, isActive: true });
+            if (!stock) {
+                throw new Error(`Stock ${symbol} not found`);
+            }
+
+            // BUY Order Logic
+            const buyValue = buyPrice * quantity;
+            const buyCharges = calculateCharges('BUY', buyPrice, quantity, stock.exchange || 'NSE', 'DELIVERY');
+            const totalBuyCost = buyValue + buyCharges.totalCharges;
 
             // Simulate execution delay
             if (this.mode === 'PAPER') {
@@ -46,39 +56,39 @@ class OrderExecutor {
                 throw new Error('User not found');
             }
 
-            if (user.virtualBalance < totalAmount) {
-                throw new Error(`Insufficient balance. Required: ₹${totalAmount.toFixed(2)}, Available: ₹${user.virtualBalance.toFixed(2)}`);
+            if (user.virtualBalance < totalBuyCost) {
+                throw new Error(`Insufficient balance. Required: ₹${totalBuyCost.toFixed(2)}, Available: ₹${user.virtualBalance.toFixed(2)}`);
             }
 
-            // Find stock
-            const stock = await Stock.findOne({ symbol, isActive: true });
-            if (!stock) {
-                throw new Error(`Stock ${symbol} not found`);
-            }
-
-            // Deduct balance
-            user.virtualBalance -= totalAmount;
+            // Deduct balance (including charges)
+            user.virtualBalance -= totalBuyCost;
             await user.save();
 
-            // Create order
+            // Create order with charges - Store all values
             const order = await Order.create({
                 user: userId,
                 stock: stock._id,
                 symbol: symbol,
                 type: 'BUY',
                 quantity: quantity,
-                price: executionPrice,
-                totalAmount: totalAmount,
+                price: buyPrice, // buy_price
+                totalAmount: buyValue, // buy_value
+                charges: buyCharges, // buy_charges
+                segment: 'DELIVERY',
                 status: 'COMPLETED'
             });
 
             // Update or create holding
+            // Note: totalInvested includes charges for accurate P&L calculation
             let holding = await Holding.findOne({ user: userId, symbol: symbol });
 
             if (holding) {
-                const newTotalInvested = holding.totalInvested + totalAmount;
+                const newTotalInvested = holding.totalInvested + totalBuyCost; // Include charges
                 const newQuantity = holding.quantity + quantity;
-                const newAverageBuyPrice = newTotalInvested / newQuantity;
+                // Average buy price based on gross amounts (price * quantity), not including charges
+                const previousGrossValue = holding.averageBuyPrice * holding.quantity;
+                const newGrossValue = previousGrossValue + buyValue;
+                const newAverageBuyPrice = newGrossValue / newQuantity;
 
                 holding.quantity = newQuantity;
                 holding.averageBuyPrice = newAverageBuyPrice;
@@ -90,22 +100,25 @@ class OrderExecutor {
                     stock: stock._id,
                     symbol: symbol,
                     quantity: quantity,
-                    averageBuyPrice: executionPrice,
-                    totalInvested: totalAmount
+                    averageBuyPrice: buyPrice, // Gross price per share
+                    totalInvested: totalBuyCost // Total paid including charges
                 });
             }
 
             const executionTime = Date.now() - startTime;
-            const slippage = ((executionPrice - ltp) / ltp) * 100;
+            const slippage = ((buyPrice - ltp) / ltp) * 100;
 
             return {
                 success: true,
                 order: order,
                 holding: holding,
-                executionPrice: executionPrice,
+                executionPrice: buyPrice,
                 slippage: slippage,
                 executionTime: executionTime,
-                remainingBalance: user.virtualBalance
+                remainingBalance: user.virtualBalance,
+                buyValue: buyValue,
+                buyCharges: buyCharges,
+                totalBuyCost: totalBuyCost
             };
 
         } catch (error) {
@@ -128,7 +141,7 @@ class OrderExecutor {
             }
 
             // Apply slippage for paper trading (negative for sells)
-            const executionPrice = this.mode === 'PAPER'
+            const sellPrice = this.mode === 'PAPER'
                 ? ltp * (1 - this.slippagePercent / 100)
                 : ltp;
 
@@ -147,41 +160,58 @@ class OrderExecutor {
                 throw new Error(`Insufficient shares. You own ${holding.quantity}, trying to sell ${quantity}`);
             }
 
-            // Find stock
+            // Find stock to get exchange
             const stock = await Stock.findOne({ symbol, isActive: true });
             if (!stock) {
                 throw new Error(`Stock ${symbol} not found`);
             }
 
-            // Calculate P&L
-            const totalAmount = quantity * executionPrice;
-            const buyValue = quantity * holding.averageBuyPrice;
-            const profitLoss = totalAmount - buyValue;
-            const profitLossPercent = (profitLoss / buyValue) * 100;
+            // SELL Order Logic
+            const sellValue = sellPrice * quantity;
+            const sellCharges = calculateCharges('SELL', sellPrice, quantity, stock.exchange || 'NSE', 'DELIVERY');
+            const netSellValue = sellValue - sellCharges.totalCharges;
 
-            // Update user balance
+            // Get buy charges (estimate based on average buy price)
+            const buyCharges = calculateCharges('BUY', holding.averageBuyPrice, quantity, stock.exchange || 'NSE', 'DELIVERY');
+
+            // Calculate P&L including charges
+            const pnlCalculation = calculatePnL(
+                holding.averageBuyPrice,
+                sellPrice,
+                quantity,
+                buyCharges,
+                sellCharges,
+                stock.exchange || 'NSE',
+                'DELIVERY'
+            );
+
+            // Update user balance (net amount after charges)
             const user = await User.findById(userId);
-            user.virtualBalance += totalAmount;
+            user.virtualBalance += netSellValue;
             await user.save();
 
-            // Create order
+            // Create order with charges - Store all values
             const order = await Order.create({
                 user: userId,
                 stock: stock._id,
                 symbol: symbol,
                 type: 'SELL',
                 quantity: quantity,
-                price: executionPrice,
-                totalAmount: totalAmount,
+                price: sellPrice, // sell_price
+                totalAmount: sellValue, // sell_value
+                charges: sellCharges, // sell_charges
+                segment: 'DELIVERY',
                 status: 'COMPLETED',
                 buyPrice: holding.averageBuyPrice,
-                profitLoss: profitLoss,
-                profitLossPercent: profitLossPercent
+                profitLoss: pnlCalculation.netPnL,
+                profitLossPercent: pnlCalculation.netPnLPercent
             });
 
             // Update holding
+            // Calculate proportional totalInvested to deduct (including charges)
+            const proportionalInvested = (holding.totalInvested / holding.quantity) * quantity;
             holding.quantity -= quantity;
-            holding.totalInvested -= buyValue;
+            holding.totalInvested -= proportionalInvested;
 
             if (holding.quantity === 0) {
                 await Holding.deleteOne({ _id: holding._id });
@@ -190,18 +220,22 @@ class OrderExecutor {
             }
 
             const executionTime = Date.now() - startTime;
-            const slippage = ((ltp - executionPrice) / ltp) * 100;
+            const slippage = ((ltp - sellPrice) / ltp) * 100;
 
             return {
                 success: true,
                 order: order,
-                executionPrice: executionPrice,
+                executionPrice: sellPrice,
                 slippage: slippage,
                 executionTime: executionTime,
-                profitLoss: profitLoss,
-                profitLossPercent: profitLossPercent,
+                profitLoss: pnlCalculation.netPnL,
+                profitLossPercent: pnlCalculation.netPnLPercent,
                 remainingBalance: user.virtualBalance,
-                remainingShares: holding.quantity
+                remainingShares: holding.quantity || 0,
+                sellValue: sellValue,
+                sellCharges: sellCharges,
+                netSellValue: netSellValue,
+                pnlBreakdown: pnlCalculation
             };
 
         } catch (error) {

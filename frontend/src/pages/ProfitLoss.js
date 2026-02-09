@@ -79,14 +79,19 @@ const ProfitLoss = () => {
                             ? 'bg-gradient-to-br from-success-500 to-success-600'
                             : 'bg-gradient-to-br from-danger-500 to-danger-600'
                             } text-white`}>
-                            <p className="text-sm opacity-90 mb-2">Total Profit & Loss</p>
+                            <p className="text-sm opacity-90 mb-2">Total Profit & Loss (Net)</p>
                             <p className="text-5xl font-bold mb-2">
                                 {pnlData.totalPnL >= 0 ? '+' : ''}
                                 ₹{Math.abs(pnlData.totalPnL).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                             </p>
                             <p className="text-sm opacity-90">
-                                {pnlData.totalPnL >= 0 ? '📈 Profit' : '📉 Loss'}
+                                {pnlData.totalPnL >= 0 ? '📈 Profit' : '📉 Loss'} (After all charges)
                             </p>
+                            {pnlData.breakdown?.total?.totalCharges && (
+                                <p className="text-xs opacity-75 mt-2">
+                                    Total Charges: ₹{pnlData.breakdown.total.totalCharges.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                                </p>
+                            )}
                         </div>
 
                         {/* Realized vs Unrealized */}
@@ -110,9 +115,43 @@ const ProfitLoss = () => {
                                     ₹{pnlData.realizedPnL.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                                 </p>
 
-                                <p className="text-sm text-neutral-600 dark:text-neutral-400">
-                                    Profit/loss from completed trades
+                                <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-3">
+                                    Net P&L (after charges)
                                 </p>
+
+                                {/* Detailed Breakdown */}
+                                {pnlData.breakdown?.realized && (
+                                    <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-700 space-y-2 text-sm">
+                                        <div className="flex justify-between">
+                                            <span className="text-neutral-600 dark:text-neutral-400">Buy Value:</span>
+                                            <span className="font-medium text-neutral-900 dark:text-white">
+                                                ₹{pnlData.breakdown.realized.buyValue.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-neutral-600 dark:text-neutral-400">Sell Value:</span>
+                                            <span className="font-medium text-neutral-900 dark:text-white">
+                                                ₹{pnlData.breakdown.realized.sellValue.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-neutral-600 dark:text-neutral-400">Total Charges:</span>
+                                            <span className="font-medium text-danger-600 dark:text-danger-400">
+                                                ₹{pnlData.breakdown.realized.totalCharges.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between pt-2 border-t border-neutral-200 dark:border-neutral-700">
+                                            <span className="text-neutral-600 dark:text-neutral-400">Gross P&L:</span>
+                                            <span className={`font-medium ${pnlData.breakdown.realized.grossPnL >= 0
+                                                ? 'text-success-600 dark:text-success-400'
+                                                : 'text-danger-600 dark:text-danger-400'
+                                                }`}>
+                                                {pnlData.breakdown.realized.grossPnL >= 0 ? '+' : ''}
+                                                ₹{pnlData.breakdown.realized.grossPnL.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
 
                                 <button
                                     onClick={() => navigate('/orders/history')}
@@ -141,9 +180,37 @@ const ProfitLoss = () => {
                                     ₹{pnlData.unrealizedPnL.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                                 </p>
 
-                                <p className="text-sm text-neutral-600 dark:text-neutral-400">
-                                    Profit/loss from current holdings
+                                <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-3">
+                                    Net P&L (estimated)
                                 </p>
+
+                                {/* Detailed Breakdown */}
+                                {pnlData.breakdown?.unrealized && (
+                                    <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-700 space-y-2 text-sm">
+                                        <div className="flex justify-between">
+                                            <span className="text-neutral-600 dark:text-neutral-400">Buy Value:</span>
+                                            <span className="font-medium text-neutral-900 dark:text-white">
+                                                ₹{pnlData.breakdown.unrealized.buyValue.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-neutral-600 dark:text-neutral-400">Buy Charges:</span>
+                                            <span className="font-medium text-danger-600 dark:text-danger-400">
+                                                ₹{pnlData.breakdown.unrealized.buyCharges.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between pt-2 border-t border-neutral-200 dark:border-neutral-700">
+                                            <span className="text-neutral-600 dark:text-neutral-400">Gross P&L:</span>
+                                            <span className={`font-medium ${pnlData.breakdown.unrealized.grossPnL >= 0
+                                                ? 'text-success-600 dark:text-success-400'
+                                                : 'text-danger-600 dark:text-danger-400'
+                                                }`}>
+                                                {pnlData.breakdown.unrealized.grossPnL >= 0 ? '+' : ''}
+                                                ₹{pnlData.breakdown.unrealized.grossPnL.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
 
                                 <button
                                     onClick={() => navigate('/portfolio')}

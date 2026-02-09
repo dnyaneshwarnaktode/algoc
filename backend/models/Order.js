@@ -61,6 +61,22 @@ const orderSchema = new mongoose.Schema({
     profitLossPercent: {
         type: Number,
         default: 0
+    },
+    // Charges breakdown
+    charges: {
+        brokerage: { type: Number, default: 0 },
+        stt: { type: Number, default: 0 },
+        exchangeTransactionCharge: { type: Number, default: 0 },
+        sebiCharges: { type: Number, default: 0 },
+        stampDuty: { type: Number, default: 0 },
+        gst: { type: Number, default: 0 },
+        totalCharges: { type: Number, default: 0 }
+    },
+    // Segment type (DELIVERY or INTRADAY)
+    segment: {
+        type: String,
+        enum: ['DELIVERY', 'INTRADAY'],
+        default: 'DELIVERY'
     }
 }, {
     timestamps: true

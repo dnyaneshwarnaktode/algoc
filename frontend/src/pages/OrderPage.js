@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import api from '../services/api';
 import websocketService from '../services/websocketService';
+import { calculateCharges } from '../utils/calculateCharges';
 
 /**
  * Order Page
@@ -28,7 +29,41 @@ const OrderPage = () => {
     const [error, setError] = useState(null);
 
     const isBuy = type === 'buy';
-    const totalAmount = quantity * (livePrice || 0);
+    
+    // Calculate order values with charges
+    const orderCalculation = useMemo(() => {
+        if (!livePrice || quantity < 1) return null;
+        
+        const price = livePrice;
+        // Get exchange from stock or reduxStock, default to NSE
+        const exchange = (stock?.exchange || reduxStock?.exchange) ? (stock?.exchange || reduxStock?.exchange) : 'NSE';
+        
+        if (isBuy) {
+            // BUY Order Logic
+            const buyValue = price * quantity;
+            const buyCharges = calculateCharges('BUY', price, quantity, exchange, 'DELIVERY');
+            const totalBuyCost = buyValue + buyCharges.totalCharges;
+            
+            return {
+                value: buyValue,
+                charges: buyCharges,
+                totalCost: totalBuyCost,
+                netAmount: totalBuyCost
+            };
+        } else {
+            // SELL Order Logic
+            const sellValue = price * quantity;
+            const sellCharges = calculateCharges('SELL', price, quantity, exchange, 'DELIVERY');
+            const netSellValue = sellValue - sellCharges.totalCharges;
+            
+            return {
+                value: sellValue,
+                charges: sellCharges,
+                totalCost: sellValue,
+                netAmount: netSellValue
+            };
+        }
+    }, [livePrice, quantity, isBuy, stock]);
 
     useEffect(() => {
         if (!stock || !livePrice) {
@@ -67,8 +102,8 @@ const OrderPage = () => {
                 return;
             }
 
-            if (isBuy && totalAmount > user.virtualBalance) {
-                setError(`Insufficient balance. Required: ₹${totalAmount.toFixed(2)}, Available: ₹${user.virtualBalance.toFixed(2)}`);
+            if (isBuy && orderCalculation && orderCalculation.totalCost > user.virtualBalance) {
+                setError(`Insufficient balance. Required: ₹${orderCalculation.totalCost.toFixed(2)}, Available: ₹${user.virtualBalance.toFixed(2)}`);
                 setLoading(false);
                 return;
             }
@@ -189,51 +224,107 @@ const OrderPage = () => {
                                 Order Summary
                             </h3>
 
-                            <div className="space-y-2">
-                                <div className="flex justify-between">
-                                    <span className="text-neutral-600 dark:text-neutral-400">
-                                        Quantity
-                                    </span>
-                                    <span className="font-medium text-neutral-900 dark:text-white">
-                                        {quantity} {quantity === 1 ? 'share' : 'shares'}
-                                    </span>
-                                </div>
-
-                                <div className="flex justify-between">
-                                    <span className="text-neutral-600 dark:text-neutral-400">
-                                        Price per share
-                                    </span>
-                                    <span className="font-medium text-neutral-900 dark:text-white">
-                                        ₹{livePrice.toFixed(2)}
-                                    </span>
-                                </div>
-
-                                <div className="border-t border-neutral-200 dark:border-neutral-600 pt-2 mt-2">
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-lg font-semibold text-neutral-900 dark:text-white">
-                                            Total Amount
-                                        </span>
-                                        <span className={`text-2xl font-bold ${isBuy ? 'text-danger-600 dark:text-danger-400' : 'text-success-600 dark:text-success-400'
-                                            }`}>
-                                            {isBuy ? '-' : '+'}₹{totalAmount.toFixed(2)}
-                                        </span>
-                                    </div>
-                                </div>
-
-                                {isBuy && (
-                                    <div className="flex justify-between text-sm">
+                            {orderCalculation ? (
+                                <div className="space-y-2">
+                                    <div className="flex justify-between">
                                         <span className="text-neutral-600 dark:text-neutral-400">
-                                            Balance after order
+                                            Quantity
                                         </span>
-                                        <span className={`font-medium ${(user?.virtualBalance - totalAmount) < 0
-                                            ? 'text-danger-600 dark:text-danger-400'
-                                            : 'text-neutral-900 dark:text-white'
-                                            }`}>
-                                            ₹{(user?.virtualBalance - totalAmount).toFixed(2)}
+                                        <span className="font-medium text-neutral-900 dark:text-white">
+                                            {quantity} {quantity === 1 ? 'share' : 'shares'}
                                         </span>
                                     </div>
-                                )}
-                            </div>
+
+                                    <div className="flex justify-between">
+                                        <span className="text-neutral-600 dark:text-neutral-400">
+                                            Price per share
+                                        </span>
+                                        <span className="font-medium text-neutral-900 dark:text-white">
+                                            ₹{livePrice.toFixed(2)}
+                                        </span>
+                                    </div>
+
+                                    <div className="flex justify-between">
+                                        <span className="text-neutral-600 dark:text-neutral-400">
+                                            {isBuy ? 'Buy Value' : 'Sell Value'}
+                                        </span>
+                                        <span className="font-medium text-neutral-900 dark:text-white">
+                                            ₹{orderCalculation.value.toFixed(2)}
+                                        </span>
+                                    </div>
+
+                                    {/* Charges Breakdown */}
+                                    <div className="pt-2 mt-2 border-t border-neutral-200 dark:border-neutral-600">
+                                        <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                                            Charges & Taxes:
+                                        </p>
+                                        <div className="space-y-1 text-sm">
+                                            {orderCalculation.charges.stt > 0 && (
+                                                <div className="flex justify-between">
+                                                    <span className="text-neutral-500 dark:text-neutral-400">STT</span>
+                                                    <span className="text-neutral-700 dark:text-neutral-300">₹{orderCalculation.charges.stt.toFixed(2)}</span>
+                                                </div>
+                                            )}
+                                            {orderCalculation.charges.exchangeTransactionCharge > 0 && (
+                                                <div className="flex justify-between">
+                                                    <span className="text-neutral-500 dark:text-neutral-400">Exchange Charges</span>
+                                                    <span className="text-neutral-700 dark:text-neutral-300">₹{orderCalculation.charges.exchangeTransactionCharge.toFixed(2)}</span>
+                                                </div>
+                                            )}
+                                            {orderCalculation.charges.sebiCharges > 0 && (
+                                                <div className="flex justify-between">
+                                                    <span className="text-neutral-500 dark:text-neutral-400">SEBI Charges</span>
+                                                    <span className="text-neutral-700 dark:text-neutral-300">₹{orderCalculation.charges.sebiCharges.toFixed(2)}</span>
+                                                </div>
+                                            )}
+                                            {orderCalculation.charges.stampDuty > 0 && (
+                                                <div className="flex justify-between">
+                                                    <span className="text-neutral-500 dark:text-neutral-400">Stamp Duty</span>
+                                                    <span className="text-neutral-700 dark:text-neutral-300">₹{orderCalculation.charges.stampDuty.toFixed(2)}</span>
+                                                </div>
+                                            )}
+                                            {orderCalculation.charges.gst > 0 && (
+                                                <div className="flex justify-between">
+                                                    <span className="text-neutral-500 dark:text-neutral-400">GST</span>
+                                                    <span className="text-neutral-700 dark:text-neutral-300">₹{orderCalculation.charges.gst.toFixed(2)}</span>
+                                                </div>
+                                            )}
+                                            <div className="flex justify-between pt-1 border-t border-neutral-200 dark:border-neutral-600 mt-1">
+                                                <span className="font-medium text-neutral-700 dark:text-neutral-300">Total Charges</span>
+                                                <span className="font-medium text-neutral-900 dark:text-white">₹{orderCalculation.charges.totalCharges.toFixed(2)}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="border-t border-neutral-200 dark:border-neutral-600 pt-2 mt-2">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-lg font-semibold text-neutral-900 dark:text-white">
+                                                {isBuy ? 'Total Cost' : 'Net Amount'}
+                                            </span>
+                                            <span className={`text-2xl font-bold ${isBuy ? 'text-danger-600 dark:text-danger-400' : 'text-success-600 dark:text-success-400'
+                                                }`}>
+                                                {isBuy ? '-' : '+'}₹{orderCalculation.netAmount.toFixed(2)}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {isBuy && (
+                                        <div className="flex justify-between text-sm pt-2">
+                                            <span className="text-neutral-600 dark:text-neutral-400">
+                                                Balance after order
+                                            </span>
+                                            <span className={`font-medium ${(user?.virtualBalance - orderCalculation.netAmount) < 0
+                                                ? 'text-danger-600 dark:text-danger-400'
+                                                : 'text-neutral-900 dark:text-white'
+                                                }`}>
+                                                ₹{(user?.virtualBalance - orderCalculation.netAmount).toFixed(2)}
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <p className="text-neutral-500 dark:text-neutral-400">Calculating...</p>
+                            )}
                         </div>
 
                         {/* Error Message */}
